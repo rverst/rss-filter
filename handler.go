@@ -2,11 +2,14 @@ package main
 
 import (
 	"fmt"
+	"github.com/gorilla/feeds"
 	"github.com/mmcdole/gofeed"
 	"github.com/rs/zerolog/log"
+	"github.com/rverst/goql"
 	"net/http"
 	"runtime"
 	"strings"
+	"time"
 )
 
 type filter struct {
@@ -34,25 +37,29 @@ func (h rssHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var feedUrl string
+	var feedUrl, filter string
 
 	q := r.URL.Query()
 	l := log.With()
 	for k, v := range q {
 		if strings.ToLower(k) == "feed_url" && len(v) > 0 {
 			feedUrl = v[0]
-		} else if strings.ToLower(k) == "filter" {
-			for _, s := range v {
-				fmt.Println("FILTER", s)
-
-			}
+		} else if strings.ToLower(k) == "filter" && len(v) > 0{
+			filter = v[0]
 		}
-
 
 		l = l.Strs(k, v)
 	}
 	ll := l.Logger()
 	ll.Trace().Msg("serve http")
+
+	p := goql.NewParser(strings.NewReader(filter))
+	t, err := p.Parse()
+	if err != nil {
+		log.Err(err).Msg("parsing filter failed")
+		_, _ = w.Write([]byte(fmt.Sprintf("can't parse filter: %s", err.Error())))
+		w.WriteHeader(http.StatusInternalServerError)
+	}
 
 	fp := gofeed.NewParser()
 	fp.UserAgent = userAgent()
@@ -64,12 +71,67 @@ func (h rssHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items := feed.Items
-	for i := 0; i < len(items); i++ {
-
+	newFeed := feeds.Feed{
+		Title:       feed.Title,
+		Link:        &feeds.Link{Href: feed.Link},
+		Description: feed.Description,
+		Updated:     *feed.UpdatedParsed,
+		Created:     *feed.PublishedParsed,
+		Items: 		 []*feeds.Item{},
+		Copyright:   feed.Copyright,
 	}
 
-	log.Trace().Str("title", feed.Title).Send()
+	for _, item := range feed.Items {
+		if item == nil {
+			continue
+		}
+		b, err := t.CheckStruct(item)
+		if err != nil {
+			log.Warn().Err(err).Interface("item", item).Msg("check item failed")
+		}
+		if !b {
+			continue
+		}
+
+		var pub, upd time.Time
+		var enc *feeds.Enclosure
+		if item.PublishedParsed != nil {
+			pub = *item.PublishedParsed
+		}
+		if item.UpdatedParsed != nil {
+			upd = *item.UpdatedParsed
+		}
+
+		if len(item.Enclosures) > 0 {
+			enc = new(feeds.Enclosure)
+			enc.Type = item.Enclosures[0].Type
+			enc.Url = item.Enclosures[0].URL
+			enc.Length = item.Enclosures[0].Length
+		}
+
+		newFeed.Items = append(newFeed.Items, &feeds.Item{
+			Title:       item.Title,
+			Link:        &feeds.Link{Href: item.Link},
+			Description: item.Description,
+			Id:          item.GUID,
+			Updated:     upd,
+			Created:     pub,
+			Content:     item.Content,
+			Enclosure:  enc,
+		})
+	}
+
+	json, err := newFeed.ToJSON()
+	if err != nil {
+		log.Err(err).Msg("creating of feed failed")
+		_, _ = w.Write([]byte(fmt.Sprintf("can't create feed: %#v", newFeed)))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(json))
+	w.WriteHeader(http.StatusOK)
 }
 
 func userAgent() string {

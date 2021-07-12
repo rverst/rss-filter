@@ -2,6 +2,9 @@
 github.com/PuerkitoBio/goquery
 # github.com/andybalholm/cascadia v1.1.0
 github.com/andybalholm/cascadia
+# github.com/gorilla/feeds v1.1.1
+## explicit
+github.com/gorilla/feeds
 # github.com/integrii/flaggy v1.4.4
 ## explicit
 github.com/integrii/flaggy
@@ -27,8 +30,9 @@ github.com/rs/zerolog
 github.com/rs/zerolog/internal/cbor
 github.com/rs/zerolog/internal/json
 github.com/rs/zerolog/log
-# github.com/rverst/goql v0.0.0-20210712192800-2c9a4de9aed8
+# github.com/rverst/goql v0.0.0-20210712201207-8d8acd561605
 ## explicit
+github.com/rverst/goql
 # golang.org/x/net v0.0.0-20201021035429-f5854403a974
 golang.org/x/net/html
 golang.org/x/net/html/atom
