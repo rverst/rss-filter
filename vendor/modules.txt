@@ -1,0 +1,53 @@
+# github.com/PuerkitoBio/goquery v1.5.1
+github.com/PuerkitoBio/goquery
+# github.com/andybalholm/cascadia v1.1.0
+github.com/andybalholm/cascadia
+# github.com/integrii/flaggy v1.4.4
+## explicit
+github.com/integrii/flaggy
+# github.com/json-iterator/go v1.1.10
+github.com/json-iterator/go
+# github.com/mmcdole/gofeed v1.1.3
+## explicit
+github.com/mmcdole/gofeed
+github.com/mmcdole/gofeed/atom
+github.com/mmcdole/gofeed/extensions
+github.com/mmcdole/gofeed/internal/shared
+github.com/mmcdole/gofeed/json
+github.com/mmcdole/gofeed/rss
+# github.com/mmcdole/goxpp v0.0.0-20181012175147-0068e33feabf
+github.com/mmcdole/goxpp
+# github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421
+github.com/modern-go/concurrent
+# github.com/modern-go/reflect2 v0.0.0-20180701023420-4b7aa43c6742
+github.com/modern-go/reflect2
+# github.com/rs/zerolog v1.23.0
+## explicit
+github.com/rs/zerolog
+github.com/rs/zerolog/internal/cbor
+github.com/rs/zerolog/internal/json
+github.com/rs/zerolog/log
+# github.com/rverst/goql v0.0.0-20210712192800-2c9a4de9aed8
+## explicit
+# golang.org/x/net v0.0.0-20201021035429-f5854403a974
+golang.org/x/net/html
+golang.org/x/net/html/atom
+golang.org/x/net/html/charset
+# golang.org/x/text v0.3.3
+golang.org/x/text/encoding
+golang.org/x/text/encoding/charmap
+golang.org/x/text/encoding/htmlindex
+golang.org/x/text/encoding/internal
+golang.org/x/text/encoding/internal/identifier
+golang.org/x/text/encoding/japanese
+golang.org/x/text/encoding/korean
+golang.org/x/text/encoding/simplifiedchinese
+golang.org/x/text/encoding/traditionalchinese
+golang.org/x/text/encoding/unicode
+golang.org/x/text/internal/language
+golang.org/x/text/internal/language/compact
+golang.org/x/text/internal/tag
+golang.org/x/text/internal/utf8internal
+golang.org/x/text/language
+golang.org/x/text/runes
+golang.org/x/text/transform
