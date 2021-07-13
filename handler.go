@@ -6,6 +6,7 @@ import (
 	"github.com/mmcdole/gofeed"
 	"github.com/rs/zerolog/log"
 	"github.com/rverst/goql"
+	"io/ioutil"
 	"net/http"
 	"runtime"
 	"strings"
@@ -16,28 +17,34 @@ type format string
 
 const (
 	keep = format("keep")
-	rss = format("rss")
+	rss  = format("rss")
 	atom = format("atom")
 	json = format("json")
 )
 
 type rssHandler struct {
-	apiKey string
+	user        string
+	password    string
+	disableAuth bool
 }
 
-func newRssHandler(apiKey string) *rssHandler {
+func newRssHandler(user, password string, disableAuth bool) *rssHandler {
 	return &rssHandler{
-		apiKey: apiKey,
+		user:        user,
+		password:    password,
+		disableAuth: disableAuth,
 	}
 }
 
 func (h rssHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
-	if h.apiKey != "" && h.apiKey != r.Header.Get("x-api-key") {
-		w.Header().Add("WWW-Authenticate", "API key is missing or invalid")
-		w.WriteHeader(http.StatusUnauthorized)
-		log.Warn().Str("key", r.Header.Get("c-api-key")).Msg("API key is missing or invalid")
-		return
+	if !h.disableAuth {
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != h.user || pass == h.password {
+			w.Header().Add("WWW-Authenticate", "Basic realm=\"Access to rss-filter\", charset=\"UTF-8\"")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 	}
 
 	var feedUrl, filter, output string
@@ -46,9 +53,9 @@ func (h rssHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for k, v := range q {
 		if strings.ToLower(k) == "feed_url" && len(v) > 0 {
 			feedUrl = v[0]
-		} else if strings.ToLower(k) == "filter" && len(v) > 0{
+		} else if strings.ToLower(k) == "filter" && len(v) > 0 {
 			filter = v[0]
-		} else if strings.ToLower(k) == "out" && len(v) > 0{
+		} else if strings.ToLower(k) == "out" && len(v) > 0 {
 			output = strings.ToLower(v[0])
 		}
 	}
@@ -82,9 +89,45 @@ func (h rssHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req, err := http.NewRequest("GET", feedUrl, nil)
+	if err != nil {
+		log.Err(err).Msg("fetching of feed failed")
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	req.Header.Set("User-Agent", userAgent())
+	fUser := r.Header.Get("x-forward-user")
+	fPass := r.Header.Get("x-forward-password")
+	if fUser != "" || fPass != "" {
+		req.SetBasicAuth(fUser, fPass)
+	}
+
+	client := http.DefaultClient
+	resp, err := client.Do(req)
+
+	if err != nil {
+		log.Err(err).Msg("fetching of feed failed")
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		log.Error().Int("status_code", resp.StatusCode).Str("status", resp.Status).Msg("http error")
+
+		w.WriteHeader(resp.StatusCode)
+		if data, err := ioutil.ReadAll(resp.Body); err != nil {
+			log.Err(err).Send()
+		} else {
+			_, _ = w.Write(data)
+		}
+		return
+	}
+
 	fp := gofeed.NewParser()
-	fp.UserAgent = userAgent()
-	feed, err := fp.ParseURL(feedUrl)
+	feed, err := fp.Parse(resp.Body)
 	if err != nil {
 		log.Err(err).Msg("parsing of feed failed")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -93,7 +136,7 @@ func (h rssHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if fm == keep {
-		switch format(strings.ToLower(feed.FeedType)){
+		switch format(strings.ToLower(feed.FeedType)) {
 		case rss:
 			fm = rss
 		case atom:
@@ -109,13 +152,13 @@ func (h rssHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Title:       feed.Title,
 		Link:        &feeds.Link{Href: feed.Link},
 		Description: feed.Description,
-		Author:      &feeds.Author {
+		Author: &feeds.Author{
 			Name: "https://github.com/rverst/rss-filter",
 		},
-		Updated:     *feed.UpdatedParsed,
-		Created:     *feed.PublishedParsed,
-		Items:       []*feeds.Item{},
-		Copyright:   feed.Copyright,
+		Updated:   *feed.UpdatedParsed,
+		Created:   *feed.PublishedParsed,
+		Items:     []*feeds.Item{},
+		Copyright: feed.Copyright,
 	}
 
 	for _, item := range feed.Items {
@@ -156,12 +199,12 @@ func (h rssHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Updated:     upd,
 			Created:     pub,
 			Content:     item.Content,
-			Enclosure:  enc,
+			Enclosure:   enc,
 		})
 	}
 
 	var body string
-	var ctype = "application/xml"
+	var cType = "application/xml"
 	switch fm {
 	case rss:
 		body, err = newFeed.ToRss()
@@ -169,7 +212,7 @@ func (h rssHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		body, err = newFeed.ToAtom()
 	case json:
 		body, err = newFeed.ToJSON()
-		ctype = "application/json"
+		cType = "application/json"
 	}
 	if err != nil {
 		log.Err(err).Msg("creating of feed failed")
@@ -179,7 +222,7 @@ func (h rssHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Debug().Str("format", string(fm)).Int("original_items", len(feed.Items)).Int("kept_items", len(newFeed.Items)).Msg("feed filtered")
 
-	w.Header().Set("Content-Type", ctype)
+	w.Header().Set("Content-Type", cType)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(body))
 }

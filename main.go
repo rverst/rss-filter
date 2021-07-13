@@ -6,12 +6,15 @@ import (
 	"github.com/rs/zerolog/log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 )
 
 const (
 	envAddress = "LISTEN_ADDR"
-	envApiKey = "API_KEY"
+	envUser = "AUTH_USER"
+	envPassword = "AUTH_PASSWORD"
+	envDisableAuth = "DISABLE_AUTH"
 	defaultAddress = ":80"
 )
 
@@ -25,28 +28,42 @@ func main() {
 	log.Logger = zerolog.New(zerolog.NewConsoleWriter()).With().Timestamp().Str("version", version).Caller().Logger()
 
 	address := defaultAddress
-	apiKey := ""
-	disableApiKey := false
+	authUser := ""
+	authPass := ""
+	disableAuth := false
 	flaggy.SetVersion(version)
 	flaggy.String(&address, "a", "address", "The local address the server listens on, in the for <address>:<port>.")
-	flaggy.String(&apiKey, "k", "api_key", "Secret key to protect the endpoint.")
-	flaggy.Bool(&disableApiKey, "", "disable_api_key", "Disable the requirement of an api key.")
+	flaggy.String(&authUser, "u", "auth_user", "User part for basic http authentication of the endpoint.")
+	flaggy.String(&authPass, "p", "auth_password", "Secret part for basic http authentication of the endpoint.")
+	flaggy.Bool(&disableAuth, "", "disable_auth", "Disable authentication.")
 	flaggy.Parse()
 
 	adr := os.Getenv(envAddress)
-	key := os.Getenv(envApiKey)
+	user := os.Getenv(envUser)
+	pass := os.Getenv(envPassword)
+	disA := os.Getenv(envDisableAuth)
 	if adr != "" && (address == defaultAddress || address == "") {
 		address = adr
 	}
-	if key != "" && apiKey == "" {
-		apiKey = key
+	if user != "" && authUser == "" {
+		authUser = user
+	}
+	if pass != "" && authPass == "" {
+		authPass = pass
+	}
+	if disA != "" && !disableAuth {
+		var err error
+		disableAuth, err = strconv.ParseBool(disA)
+		if err != nil {
+			log.Fatal().Err(err).Msg("can't parse " + envDisableAuth)
+		}
 	}
 
-	if apiKey == "" && !disableApiKey {
-		log.Fatal().Msg("you MUST provide an api key")
+	if authPass == "" && !disableAuth {
+		log.Fatal().Msg("you MUST provide a password")
 	}
 
-	handler = newRssHandler(apiKey)
+	handler = newRssHandler(authUser, authPass, disableAuth)
 	server := &http.Server{
 		Addr:           address,
 		Handler:        handler,
