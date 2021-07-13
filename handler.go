@@ -12,11 +12,14 @@ import (
 	"time"
 )
 
-type filter struct {
-	value string
-	regex bool
-	exclude bool
-}
+type format string
+
+const (
+	keep = format("keep")
+	rss = format("rss")
+	atom = format("atom")
+	json = format("json")
+)
 
 type rssHandler struct {
 	apiKey string
@@ -37,28 +40,46 @@ func (h rssHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var feedUrl, filter string
+	var feedUrl, filter, output string
 
 	q := r.URL.Query()
-	l := log.With()
 	for k, v := range q {
 		if strings.ToLower(k) == "feed_url" && len(v) > 0 {
 			feedUrl = v[0]
 		} else if strings.ToLower(k) == "filter" && len(v) > 0{
 			filter = v[0]
+		} else if strings.ToLower(k) == "out" && len(v) > 0{
+			output = strings.ToLower(v[0])
 		}
-
-		l = l.Strs(k, v)
 	}
-	ll := l.Logger()
-	ll.Trace().Msg("serve http")
+	log.Trace().Str("feed_url", feedUrl).Str("filter", filter).Str("output", output).Msg("serve http")
+
+	if feedUrl == "" {
+		log.Error().Msg("no feed provided")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("no feed url"))
+		return
+	}
+
+	var fm format
+	switch format(output) {
+	case rss:
+		fm = rss
+	case atom:
+		fm = atom
+	case json:
+		fm = json
+	default:
+		fm = keep
+	}
 
 	p := goql.NewParser(strings.NewReader(filter))
 	t, err := p.Parse()
 	if err != nil {
 		log.Err(err).Msg("parsing filter failed")
+		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(fmt.Sprintf("can't parse filter: %s", err.Error())))
-		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 
 	fp := gofeed.NewParser()
@@ -66,18 +87,34 @@ func (h rssHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	feed, err := fp.ParseURL(feedUrl)
 	if err != nil {
 		log.Err(err).Msg("parsing of feed failed")
-		_, _ = w.Write([]byte(fmt.Sprintf("can't parse feed: %s", feedUrl)))
 		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(fmt.Sprintf("can't parse feed: %s", feedUrl)))
 		return
+	}
+
+	if fm == keep {
+		switch format(strings.ToLower(feed.FeedType)){
+		case rss:
+			fm = rss
+		case atom:
+			fm = atom
+		case json:
+			fm = json
+		default:
+			fm = atom
+		}
 	}
 
 	newFeed := feeds.Feed{
 		Title:       feed.Title,
 		Link:        &feeds.Link{Href: feed.Link},
 		Description: feed.Description,
+		Author:      &feeds.Author {
+			Name: "https://github.com/rverst/rss-filter",
+		},
 		Updated:     *feed.UpdatedParsed,
 		Created:     *feed.PublishedParsed,
-		Items: 		 []*feeds.Item{},
+		Items:       []*feeds.Item{},
 		Copyright:   feed.Copyright,
 	}
 
@@ -85,12 +122,14 @@ func (h rssHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if item == nil {
 			continue
 		}
-		b, err := t.CheckStruct(item)
-		if err != nil {
-			log.Warn().Err(err).Interface("item", item).Msg("check item failed")
-		}
-		if !b {
-			continue
+		if len(t.Conditions()) > 0 {
+			b, err := t.CheckStruct(item)
+			if err != nil {
+				log.Warn().Err(err).Interface("item", item).Msg("check item failed")
+			}
+			if !b {
+				continue
+			}
 		}
 
 		var pub, upd time.Time
@@ -121,17 +160,28 @@ func (h rssHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	json, err := newFeed.ToJSON()
+	var body string
+	var ctype = "application/xml"
+	switch fm {
+	case rss:
+		body, err = newFeed.ToRss()
+	case atom:
+		body, err = newFeed.ToAtom()
+	case json:
+		body, err = newFeed.ToJSON()
+		ctype = "application/json"
+	}
 	if err != nil {
 		log.Err(err).Msg("creating of feed failed")
-		_, _ = w.Write([]byte(fmt.Sprintf("can't create feed: %#v", newFeed)))
 		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(fmt.Sprintf("can't create feed: %#v", newFeed)))
 		return
 	}
+	log.Debug().Str("format", string(fm)).Int("original_items", len(feed.Items)).Int("kept_items", len(newFeed.Items)).Msg("feed filtered")
 
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(json))
+	w.Header().Set("Content-Type", ctype)
 	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(body))
 }
 
 func userAgent() string {

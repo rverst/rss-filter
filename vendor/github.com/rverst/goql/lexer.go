@@ -269,6 +269,10 @@ func (s Scanner) scanQuotedLiteral(q rune) (Token, string) {
 	return LITERAL, str
 }
 
+func (s Scanner) isEmpty() bool {
+	return s.r.Size() == 0
+}
+
 func isEscapeChar(c rune) bool {
 	return c == cEscape || c == cQuote || c == cSquote
 }
