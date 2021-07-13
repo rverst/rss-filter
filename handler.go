@@ -40,7 +40,7 @@ func (h rssHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if !h.disableAuth {
 		user, pass, ok := r.BasicAuth()
-		if !ok || user != h.user || pass == h.password {
+		if !ok || user != h.user || pass != h.password {
 			w.Header().Add("WWW-Authenticate", "Basic realm=\"Access to rss-filter\", charset=\"UTF-8\"")
 			w.WriteHeader(http.StatusUnauthorized)
 			return
