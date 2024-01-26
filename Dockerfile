@@ -1,12 +1,10 @@
-FROM golang:1.16 AS builder
+FROM golang:1.20 AS builder
 
 ARG VERSION=unknown
 
 WORKDIR $GOPATH/src/gihub.com/rverst/rss-filter
 
 ENV CGO_ENABLED 0
-ENV GOOS=linux
-ENV GOARCH=amd64
 
 COPY . .
 
